@@ -28,5 +28,6 @@ go.work
 ### Go Patch ###
 /vendor/
 /Godeps/
-
+credentials.json
 # End of https://www.toptal.com/developers/gitignore/api/go
+/tmp/
