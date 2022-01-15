@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os/exec"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -19,11 +20,17 @@ const (
 	credentialPath = "credentials.json"
 )
 
-func getUpcomingGoogleMeeting() {
+type GoogleMeeting struct {
+	Title              string
+	StartTime          time.Time
+	ConferenceNumber   string
+	ConferencePassword string
+}
+
+func getUpcomingGoogleMeeting() (gm GoogleMeeting, err error) {
 	calendarService, err := newGoogleCalenderService()
 	if err != nil {
-		fmt.Println(err)
-		return
+		return gm, err
 	}
 	eventService := calendar.NewEventsService(calendarService)
 	eventList := eventService.List("primary")
@@ -31,16 +38,23 @@ func getUpcomingGoogleMeeting() {
 	eventList.MaxResults(1)
 	eventList.OrderBy("startTime")
 	eventList.TimeMin(time.Now().Format(time.RFC3339))
+	eventList.TimeMax(time.Now().Add(time.Minute * 30).Format(time.RFC3339))
 	events, err := eventList.Do()
 	if err != nil {
-		fmt.Errorf("Unable to find event")
+		return gm, fmt.Errorf("unable to find event")
 	}
 	eventOne := events.Items[0]
+	gm.Title = eventOne.Summary
+	meetingTime, _ := time.Parse(time.RFC3339, eventOne.Start.DateTime)
+	gm.StartTime = meetingTime
 	for _, entryPoint := range eventOne.ConferenceData.EntryPoints {
 		if entryPoint.EntryPointType == "video" {
-			fmt.Println(entryPoint.Uri)
+			gm.ConferenceNumber = entryPoint.MeetingCode
+			gm.ConferencePassword = entryPoint.Passcode
+			break
 		}
 	}
+	return gm, nil
 
 }
 
@@ -117,6 +131,20 @@ func generateNewToken(config *oauth2.Config) (*oauth2.Token, error) {
 
 }
 
+func generateZoomMtgLink(confNumber, confPassword string) string {
+	zoomMtgLink := fmt.Sprintf("zoommtg://zoom.us/join?confno=%s&pwd=%s", confNumber, confPassword)
+	return zoomMtgLink
+}
+
 func main() {
-	getUpcomingGoogleMeeting()
+	meeting, err := getUpcomingGoogleMeeting()
+	if err != nil {
+		fmt.Errorf("error while getting the meeting")
+		return
+	}
+	fmt.Printf("Here is your meeting title %s scheduled for %s \n", meeting.Title, meeting.StartTime.Format(time.Kitchen))
+	fmt.Printf("Enter this passcode on zoom client %s \n", meeting.ConferencePassword)
+	zoomLink := generateZoomMtgLink(meeting.ConferenceNumber, meeting.ConferencePassword)
+	exec.Command("open", zoomLink).Run()
+
 }
